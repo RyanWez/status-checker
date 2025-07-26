@@ -29,7 +29,7 @@ if %errorlevel% neq 0 (
 )
 
 echo 🔐 Setting up secrets...
-flyctl secrets set TELEGRAM_TOKEN="8018331092:AAEvZ1vqaawJGJ7FngNJD3ijqj0LogsNCkA" ADMIN_CHAT_IDS="5741184861,6993283728" MONGO_URL="mongodb+srv://iravwyuhor:WkfDwy4aR8jbkSD0@domainmonitor.nzk39ze.mongodb.net/?retryWrites=true&w=majority&appName=domainMonitor"
+flyctl secrets set TELEGRAM_TOKEN="8018331092:AAEvZ1vqaawJGJ7FngNJD3ijqj0LogsNCkA" ADMIN_CHAT_IDS="5741184861" MONGO_URL="mongodb+srv://iravwyuhor:WkfDwy4aR8jbkSD0@domainmonitor.nzk39ze.mongodb.net/?retryWrites=true&w=majority&appName=domainMonitor"
 
 echo 🚀 Deploying application...
 flyctl deploy --ha=false
