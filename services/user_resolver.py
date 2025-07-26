@@ -5,6 +5,7 @@ Helps resolve usernames to user IDs and manage user interactions
 import logging
 from typing import Optional, Dict
 from datetime import datetime, timedelta
+from utils.timezone import myanmar_now
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,7 @@ class UserResolver:
             self.interaction_cache[user_id] = {
                 'username': username,
                 'first_name': first_name,
-                'last_seen': datetime.now()
+                'last_seen': myanmar_now()
             }
             
             # Also store in database for persistence
@@ -33,7 +34,7 @@ class UserResolver:
                         'user_id': user_id,
                         'username': username,
                         'first_name': first_name,
-                        'last_seen': datetime.now()
+                        'last_seen': myanmar_now()
                     }
                 },
                 upsert=True
@@ -94,7 +95,7 @@ class UserResolver:
     def cleanup_old_interactions(self, days: int = 30):
         """Clean up old interaction records"""
         try:
-            cutoff_date = datetime.now() - timedelta(days=days)
+            cutoff_date = myanmar_now() - timedelta(days=days)
             
             # Clean cache
             to_remove = []

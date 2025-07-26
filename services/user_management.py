@@ -5,6 +5,7 @@ import logging
 from datetime import datetime
 from typing import Dict, List, Optional
 from enum import Enum
+from utils.timezone import myanmar_now
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +91,7 @@ class UserManagementService:
                 'user_id': user_id,
                 'username': username,
                 'role': role.value,
-                'added_at': datetime.now(),
+                'added_at': myanmar_now(),
                 'added_by': added_by,
                 'allowed_groups': allowed_groups or [],
                 'is_active': True,
@@ -132,7 +133,7 @@ class UserManagementService:
                 {
                     '$set': {
                         'role': new_role.value,
-                        'updated_at': datetime.now(),
+                        'updated_at': myanmar_now(),
                         'updated_by': updated_by
                     }
                 }
@@ -174,7 +175,7 @@ class UserManagementService:
         try:
             self.users_collection.update_one(
                 {'user_id': user_id},
-                {'$set': {'last_activity': datetime.now()}}
+                {'$set': {'last_activity': myanmar_now()}}
             )
         except Exception as e:
             logger.debug(f"Error updating user activity {user_id}: {e}")
@@ -238,7 +239,7 @@ class UserManagementService:
                 {
                     '$addToSet': {'allowed_groups': group_name},
                     '$set': {
-                        'updated_at': datetime.now(),
+                        'updated_at': myanmar_now(),
                         'updated_by': added_by
                     }
                 }
@@ -261,7 +262,7 @@ class UserManagementService:
                 {
                     '$pull': {'allowed_groups': group_name},
                     '$set': {
-                        'updated_at': datetime.now(),
+                        'updated_at': myanmar_now(),
                         'updated_by': removed_by
                     }
                 }

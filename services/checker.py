@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Dict, List
 import aiohttp
 import requests
+from utils.timezone import myanmar_now
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +46,7 @@ class DomainChecker:
                     'status': 'up' if response.status == 200 else 'down',
                     'status_code': response.status,
                     'response_time': response_time,
-                    'timestamp': datetime.now(),
+                    'timestamp': myanmar_now(),
                     'error': None if response.status == 200 else f"HTTP {response.status}"
                 }
         except asyncio.TimeoutError:
@@ -54,7 +55,7 @@ class DomainChecker:
                 'status': 'down',
                 'status_code': None,
                 'response_time': None,
-                'timestamp': datetime.now(),
+                'timestamp': myanmar_now(),
                 'error': 'Connection timeout'
             }
         except Exception as e:
@@ -63,7 +64,7 @@ class DomainChecker:
                 'status': 'down',
                 'status_code': None,
                 'response_time': None,
-                'timestamp': datetime.now(),
+                'timestamp': myanmar_now(),
                 'error': str(e)
             }
     
@@ -86,7 +87,7 @@ class DomainChecker:
                 'status': 'up' if response.status_code == 200 else 'down',
                 'status_code': response.status_code,
                 'response_time': response_time,
-                'timestamp': datetime.now(),
+                'timestamp': myanmar_now(),
                 'error': None if response.status_code == 200 else f"HTTP {response.status_code}"
             }
         except requests.exceptions.Timeout:
@@ -95,7 +96,7 @@ class DomainChecker:
                 'status': 'down',
                 'status_code': None,
                 'response_time': None,
-                'timestamp': datetime.now(),
+                'timestamp': myanmar_now(),
                 'error': 'Connection timeout'
             }
         except Exception as e:
@@ -104,7 +105,7 @@ class DomainChecker:
                 'status': 'down',
                 'status_code': None,
                 'response_time': None,
-                'timestamp': datetime.now(),
+                'timestamp': myanmar_now(),
                 'error': str(e)
             }
     
@@ -157,7 +158,7 @@ class DomainChecker:
                             'status': 'down',
                             'status_code': None,
                             'response_time': None,
-                            'timestamp': datetime.now(),
+                            'timestamp': myanmar_now(),
                             'error': str(result)
                         })
                     else:

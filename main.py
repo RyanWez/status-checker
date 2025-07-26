@@ -618,7 +618,7 @@ class DomainBot:
             f"**Domain:** `{domain}`\n"
             f"**Status:** {status_emoji} {result['status'].upper()}{response_time_text}"
             f"{error_text}\n"
-            f"**Checked:** {result['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}",
+            f"**Checked:** {format_myanmar_time(result['timestamp'])}",
             parse_mode='Markdown',
             reply_markup=reply_markup
         )
@@ -708,10 +708,11 @@ class DomainBot:
         )
         
         if added_at:
-            info_text += f"**Added:** {added_at.strftime('%Y-%m-%d %H:%M:%S')}\n"
+            from utils.timezone import format_myanmar_time
+            info_text += f"**Added:** {format_myanmar_time(added_at)}\n"
         
         if last_checked:
-            info_text += f"**Last Checked:** {last_checked.strftime('%Y-%m-%d %H:%M:%S')}\n"
+            info_text += f"**Last Checked:** {format_myanmar_time(last_checked)}\n"
         
         if response_time:
             info_text += f"**Response Time:** {response_time:.2f}s\n"
@@ -864,7 +865,8 @@ class DomainBot:
             details_text += f"**{domain}**\n"
             details_text += f"• Error: `{error}`\n"
             if last_checked:
-                details_text += f"• Last checked: {last_checked.strftime('%Y-%m-%d %H:%M:%S')}\n"
+                from utils.timezone import format_myanmar_time
+                details_text += f"• Last checked: {format_myanmar_time(last_checked)}\n"
             details_text += "\n"
         
         if len(down_domains) > 10:
@@ -945,7 +947,9 @@ class DomainBot:
     async def _send_down_notification(self, domain: str, result: Dict, context: ContextTypes.DEFAULT_TYPE):
         """Send notification to all bot users about domain going down"""
         error_msg = result.get('error', 'Unknown error')
-        timestamp = result['timestamp'].strftime('%Y-%m-%d %H:%M:%S')
+        # Convert to Myanmar timezone for display
+        from utils.timezone import format_myanmar_time
+        timestamp = format_myanmar_time(result['timestamp'])
         
         notification = (
             f"🚨 **DOMAIN DOWN ALERT**\n\n"

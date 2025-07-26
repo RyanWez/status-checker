@@ -541,7 +541,8 @@ class DomainHandlers:
             unknown_count = len(domains) - up_count - down_count
             
             # Add timestamp to make content unique for refresh
-            current_time = datetime.now().strftime('%H:%M:%S')
+            from utils.timezone import format_myanmar_time_short, myanmar_now
+            current_time = format_myanmar_time_short(myanmar_now())
             text = (
                 f"{title} ({len(domains)} total)\n\n"
                 f"✅ **UP:** {up_count} | 🚨 **DOWN:** {down_count} | ⚪ **Unknown:** {unknown_count}\n\n"

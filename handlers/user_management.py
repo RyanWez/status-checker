@@ -245,10 +245,11 @@ class UserManagementHandlers:
                 user_list += f"   • Role: {role}\n"
                 
                 if added_at:
-                    user_list += f"   • Added: {added_at.strftime('%Y-%m-%d %H:%M')}\n"
+                    from utils.timezone import format_myanmar_date
+                    user_list += f"   • Added: {format_myanmar_date(added_at)}\n"
                 
                 if last_activity:
-                    user_list += f"   • Last seen: {last_activity.strftime('%Y-%m-%d %H:%M')}\n"
+                    user_list += f"   • Last seen: {format_myanmar_date(last_activity)}\n"
                 
                 # Show allowed groups for guests
                 if user.get('role') == 'guest':
@@ -313,8 +314,8 @@ class UserManagementHandlers:
             page_users = users[start_idx:end_idx]
             
             # Create header with timestamp to make refresh unique
-            from datetime import datetime
-            current_time = datetime.now().strftime('%H:%M:%S')
+            from utils.timezone import format_myanmar_time_short, myanmar_now
+            current_time = format_myanmar_time_short(myanmar_now())
             
             text = f"👥 **User Management** (Page {page + 1}/{total_pages})\n"
             text += f"**Total Users:** {len(users)}\n"
@@ -425,13 +426,14 @@ class UserManagementHandlers:
             info_text += f"**Role:** {role}\n"
             
             if added_at:
-                info_text += f"**Added:** {added_at.strftime('%Y-%m-%d %H:%M:%S')}\n"
+                from utils.timezone import format_myanmar_time
+                info_text += f"**Added:** {format_myanmar_time(added_at)}\n"
             
             if added_by:
                 info_text += f"**Added By:** {added_by}\n"
             
             if last_activity:
-                info_text += f"**Last Activity:** {last_activity.strftime('%Y-%m-%d %H:%M:%S')}\n"
+                info_text += f"**Last Activity:** {format_myanmar_time(last_activity)}\n"
             else:
                 info_text += f"**Last Activity:** Never\n"
             
@@ -624,11 +626,12 @@ class UserManagementHandlers:
         
         added_at = user.get('added_at')
         if added_at:
-            info_text += f"**Joined:** {added_at.strftime('%Y-%m-%d %H:%M')}\n"
+            from utils.timezone import format_myanmar_date
+            info_text += f"**Joined:** {format_myanmar_date(added_at)}\n"
         
         last_activity = user.get('last_activity')
         if last_activity:
-            info_text += f"**Last Activity:** {last_activity.strftime('%Y-%m-%d %H:%M')}\n"
+            info_text += f"**Last Activity:** {format_myanmar_date(last_activity)}\n"
         
         # Show permissions
         info_text += f"\n**Permissions:**\n"
@@ -700,7 +703,8 @@ class UserManagementHandlers:
                     if user_info.get('first_name'):
                         result_text += f"**Name:** {user_info['first_name']}\n"
                     if user_info.get('last_seen'):
-                        result_text += f"**Last Seen:** {user_info['last_seen'].strftime('%Y-%m-%d %H:%M:%S')}\n"
+                        from utils.timezone import format_myanmar_time
+                        result_text += f"**Last Seen:** {format_myanmar_time(user_info['last_seen'])}\n"
                 
                 # Check if user is already registered
                 existing_user = self.user_service.get_user(found_user_id)

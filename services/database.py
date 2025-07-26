@@ -7,6 +7,7 @@ from typing import Dict, List, Optional
 from pymongo import MongoClient
 from pymongo.collection import Collection
 from pymongo.database import Database
+from utils.timezone import myanmar_now
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,7 @@ class DatabaseService:
             domain_doc = {
                 'domain': domain,
                 'group_name': group_name,
-                'added_at': datetime.now(),
+                'added_at': myanmar_now(),
                 'last_status': None,
                 'last_checked': None,
                 'last_response_time': None,
@@ -234,7 +235,7 @@ class DatabaseService:
                     new_domain_docs.append({
                         'domain': domain,
                         'group_name': group_name,
-                        'added_at': datetime.now(),
+                        'added_at': myanmar_now(),
                         'last_status': None,
                         'last_checked': None,
                         'last_response_time': None,
