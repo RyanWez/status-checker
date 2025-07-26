@@ -32,6 +32,7 @@ from handlers.authentication import (
     UNAUTHENTICATED, AUTHENTICATED
 )
 from handlers.domains import DomainHandlers
+from health_server import health_server
 
 # Configure logging
 logging.basicConfig(
@@ -53,6 +54,11 @@ class DomainBot:
         try:
             logger.info("Initializing bot components...")
             
+            # Start health server first
+            logger.info("Starting health server...")
+            await health_server.start_server()
+            health_server.set_bot_status("initializing")
+            
             # Initialize database service
             logger.info("Connecting to database...")
             self.db_service = DatabaseService(settings.MONGO_URL)
@@ -73,10 +79,12 @@ class DomainBot:
             logger.info("Setting up scheduled jobs...")
             self._setup_scheduled_jobs()
             
+            health_server.set_bot_status("running")
             logger.info("Bot initialized successfully!")
             
         except Exception as e:
             logger.error(f"Failed to initialize bot: {e}")
+            health_server.set_bot_status("error")
             # Clean up any partially initialized components
             if self.db_service:
                 try:
@@ -623,6 +631,7 @@ class DomainBot:
     async def shutdown(self):
         """Gracefully shutdown the bot"""
         logger.info("Shutting down bot...")
+        health_server.set_bot_status("shutting_down")
         
         try:
             # Stop the updater
@@ -639,6 +648,9 @@ class DomainBot:
         # Close database connection
         if self.db_service:
             self.db_service.close()
+        
+        # Stop health server
+        await health_server.stop_server()
         
         logger.info("Bot shutdown complete")
 
