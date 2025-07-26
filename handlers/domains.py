@@ -9,15 +9,36 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Callbac
 from telegram.ext import ContextTypes
 from services.database import DatabaseService
 from services.checker import DomainChecker
+from services.user_management import UserManagementService
 from handlers.authentication import AUTHENTICATED
 
 logger = logging.getLogger(__name__)
 
+def require_permission(permission: str):
+    """Decorator to check user permissions"""
+    def decorator(func):
+        async def wrapper(self, update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
+            user_id = update.effective_user.id
+            
+            if not self.user_service or not self.user_service.has_permission(user_id, permission):
+                error_msg = f"❌ **Access Denied**\n\nYou don't have permission to {permission.replace('_', ' ')}."
+                
+                if update.callback_query:
+                    await update.callback_query.answer(error_msg, show_alert=True)
+                else:
+                    await update.message.reply_text(error_msg, parse_mode='Markdown')
+                return AUTHENTICATED
+            
+            return await func(self, update, context, *args, **kwargs)
+        return wrapper
+    return decorator
+
 class DomainHandlers:
     """Handlers for domain-related commands"""
     
-    def __init__(self, db_service: DatabaseService):
+    def __init__(self, db_service: DatabaseService, user_service: UserManagementService = None):
         self.db = db_service
+        self.user_service = user_service
         self.DOMAINS_PER_PAGE = 5
     
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -62,6 +83,7 @@ class DomainHandlers:
             )
         return AUTHENTICATED
     
+    @require_permission('add_domains')
     async def add_domain(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Add domain(s) to monitoring with optional group - supports bulk addition"""
         if not context.args:
@@ -327,6 +349,7 @@ class DomainHandlers:
         
         return AUTHENTICATED
     
+    @require_permission('remove_domains')
     async def remove_domain(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Remove a domain from monitoring"""
         if not context.args:
@@ -359,7 +382,7 @@ class DomainHandlers:
         
         return AUTHENTICATED
     
-    def _create_domain_list_keyboard(self, domains: List[Dict], page: int = 0, group_name: str = None) -> InlineKeyboardMarkup:
+    def _create_domain_list_keyboard(self, domains: List[Dict], page: int = 0, group_name: str = None, user_id: int = None) -> InlineKeyboardMarkup:
         """Create paginated keyboard for domain list with group support"""
         keyboard = []
         
@@ -367,20 +390,29 @@ class DomainHandlers:
         end_idx = start_idx + self.DOMAINS_PER_PAGE
         page_domains = domains[start_idx:end_idx]
         
+        # Check if user can delete domains
+        can_delete = self.user_service and user_id and self.user_service.has_permission(user_id, 'remove_domains')
+        
         # Add domain buttons
         for domain_doc in page_domains:
             domain = domain_doc['domain']
             status = domain_doc.get('last_status', 'unknown')
             status_emoji = {'up': '✅', 'down': '🚨', 'unknown': '⚪'}.get(status, '⚪')
             
-            keyboard.append([
+            # Create row buttons
+            row_buttons = [
                 InlineKeyboardButton(
                     f"{status_emoji} {domain}",
                     callback_data=f"domain_info_{domain}"
                 ),
-                InlineKeyboardButton("🔄", callback_data=f"check_single_{domain}"),
-                InlineKeyboardButton("🗑️", callback_data=f"delete_confirm_{domain}")
-            ])
+                InlineKeyboardButton("🔄", callback_data=f"check_single_{domain}")
+            ]
+            
+            # Add delete button only if user has permission
+            if can_delete:
+                row_buttons.append(InlineKeyboardButton("🗑️", callback_data=f"delete_confirm_{domain}"))
+            
+            keyboard.append(row_buttons)
         
         # Add pagination buttons
         nav_buttons = []
@@ -500,7 +532,8 @@ class DomainHandlers:
             # Sort domains: down first, then by name
             domains.sort(key=lambda x: (x.get('last_status') != 'down', x['domain']))
             
-            reply_markup = self._create_domain_list_keyboard(domains, page, group_name)
+            user_id = update.effective_user.id
+            reply_markup = self._create_domain_list_keyboard(domains, page, group_name, user_id)
             
             # Create summary
             up_count = sum(1 for d in domains if d.get('last_status') == 'up')

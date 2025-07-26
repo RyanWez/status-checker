@@ -27,11 +27,13 @@ from telegram.error import BadRequest, TelegramError
 from config.settings import settings
 from services.database import DatabaseService
 from services.checker import DomainChecker
+from services.user_management import UserManagementService
 from handlers.authentication import (
     start, logout, unauthorized_handler, 
-    UNAUTHENTICATED, AUTHENTICATED
+    UNAUTHENTICATED, AUTHENTICATED, user_service
 )
 from handlers.domains import DomainHandlers
+from handlers.user_management import UserManagementHandlers
 from health_server import health_server
 
 # Configure logging
@@ -46,7 +48,9 @@ class DomainBot:
     
     def __init__(self):
         self.db_service = None
+        self.user_service = None
         self.domain_handlers = None
+        self.user_handlers = None
         self.application = None
     
     async def initialize(self):
@@ -63,9 +67,21 @@ class DomainBot:
             logger.info("Connecting to database...")
             self.db_service = DatabaseService(settings.MONGO_URL)
             
+            # Initialize user management service
+            logger.info("Setting up user management...")
+            self.user_service = UserManagementService(self.db_service)
+            
+            # Set global user service for authentication
+            import handlers.authentication
+            handlers.authentication.user_service = self.user_service
+            
             # Initialize domain handlers
             logger.info("Setting up domain handlers...")
-            self.domain_handlers = DomainHandlers(self.db_service)
+            self.domain_handlers = DomainHandlers(self.db_service, self.user_service)
+            
+            # Initialize user management handlers
+            logger.info("Setting up user management handlers...")
+            self.user_handlers = UserManagementHandlers(self.db_service, self.user_service)
             
             # Create Telegram application
             logger.info("Creating Telegram application...")
@@ -105,6 +121,12 @@ class DomainBot:
                     CommandHandler('remove', self.domain_handlers.remove_domain),
                     CommandHandler('list', self.domain_handlers.list_groups),
                     CommandHandler(['checkall', 'check'], self.domain_handlers.check_all_domains),
+                    CommandHandler('adduser', self.user_handlers.add_user_command),
+                    CommandHandler('removeuser', self.user_handlers.remove_user_command),
+                    CommandHandler('listusers', self.user_handlers.list_users_command),
+                    CommandHandler('userlists', self.user_handlers.interactive_user_list),
+                    CommandHandler('userinfo', self.user_handlers.user_info_command),
+                    CommandHandler('finduser', self.user_handlers.find_user_command),
                     CommandHandler('logout', logout),
                     CallbackQueryHandler(self._handle_callback_query),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, unauthorized_handler)
@@ -156,6 +178,44 @@ class DomainBot:
         elif data == "logout":
             await logout(update, context)
         
+        # User management actions (Admin only)
+        elif data == "user_management":
+            await self.user_handlers.show_user_management_menu(update, context)
+        elif data == "admin_list_users":
+            await self.user_handlers.interactive_user_list(update, context, 0)
+        elif data == "admin_add_user_help":
+            await self._show_add_user_help(update, context)
+        elif data == "admin_user_roles":
+            await self._show_user_roles_info(update, context)
+        elif data == "admin_user_stats":
+            await self._show_user_stats(update, context)
+        elif data == "admin_settings":
+            await self._show_admin_settings(update, context)
+        
+        # Interactive user list pagination
+        elif data.startswith("users_page_"):
+            page = int(data.split("_")[-1])
+            await self.user_handlers.interactive_user_list(update, context, page)
+        
+        # User-specific actions
+        elif data.startswith("user_info_"):
+            target_user_id = data.replace("user_info_", "")
+            await self.user_handlers.show_user_details(update, context, target_user_id)
+        elif data.startswith("user_delete_confirm_"):
+            target_user_id = data.replace("user_delete_confirm_", "")
+            await self.user_handlers.confirm_user_deletion(update, context, target_user_id)
+        elif data.startswith("user_delete_"):
+            target_user_id = data.replace("user_delete_", "")
+            await self.user_handlers.delete_user_confirmed(update, context, target_user_id)
+        elif data.startswith("user_change_role_"):
+            target_user_id = data.replace("user_change_role_", "")
+            await self._show_change_role_menu(update, context, target_user_id)
+        elif data.startswith("set_role_"):
+            parts = data.split("_")
+            target_user_id = parts[2]
+            new_role = parts[3]
+            await self._change_user_role(update, context, target_user_id, new_role)
+        
         # Pagination
         elif data.startswith("list_page_"):
             page = int(data.split("_")[-1])
@@ -199,6 +259,288 @@ class DomainBot:
         # No-op for pagination info
         elif data == "noop":
             pass
+    
+    async def _show_add_user_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show help for adding users"""
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        
+        help_text = (
+            "➕ **Add User Help**\n\n"
+            "**Command Formats:**\n"
+            "• `/adduser <user_id> <username> [role]` - Using User ID\n"
+            "• `/adduser @username [role]` - Using Username (if known)\n\n"
+            "**Roles:**\n"
+            "• `admin` - Full access to all features\n"
+            "• `user` - Read-only access to all domains\n"
+            "• `guest` - Limited access to assigned groups\n\n"
+            "**Examples:**\n"
+            "• `/adduser 123456789 john_doe user`\n"
+            "• `/adduser @john_doe user` (if user interacted recently)\n"
+            "• `/adduser 987654321 jane_admin admin`\n\n"
+            "**Finding User ID:**\n"
+            "• `/finduser @username` - Search recent interactions\n"
+            "• Ask user to send `/start` to bot\n"
+            "• Use @userinfobot for User ID lookup\n"
+            "• Check bot logs for recent interactions"
+        )
+        
+        keyboard = [[InlineKeyboardButton("🔙 Back", callback_data="user_management")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.callback_query.edit_message_text(
+            help_text,
+            parse_mode='Markdown',
+            reply_markup=reply_markup
+        )
+    
+    async def _show_user_roles_info(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show information about user roles"""
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        
+        roles_text = (
+            "🔧 **User Roles & Permissions**\n\n"
+            "👑 **Admin**\n"
+            "• Add/remove domains\n"
+            "• Bulk operations\n"
+            "• Manage users\n"
+            "• Access all groups\n"
+            "• System settings\n\n"
+            "👤 **User**\n"
+            "• View all domains\n"
+            "• Check domain status\n"
+            "• Access all groups\n"
+            "• Cannot modify domains\n\n"
+            "👥 **Guest**\n"
+            "• View assigned groups only\n"
+            "• Check domain status\n"
+            "• Cannot modify anything\n"
+            "• Limited access"
+        )
+        
+        keyboard = [[InlineKeyboardButton("🔙 Back", callback_data="user_management")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.callback_query.edit_message_text(
+            roles_text,
+            parse_mode='Markdown',
+            reply_markup=reply_markup
+        )
+    
+    async def _show_user_stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show user statistics"""
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        
+        try:
+            users = self.user_service.get_all_users()
+            
+            # Count by role
+            role_counts = {'admin': 0, 'user': 0, 'guest': 0}
+            active_users = 0
+            
+            for user in users:
+                role = user.get('role', 'guest')
+                role_counts[role] = role_counts.get(role, 0) + 1
+                
+                if user.get('last_activity'):
+                    active_users += 1
+            
+            stats_text = (
+                f"📊 **User Statistics**\n\n"
+                f"**Total Users:** {len(users)}\n"
+                f"**Active Users:** {active_users}\n\n"
+                f"**By Role:**\n"
+                f"👑 Admins: {role_counts['admin']}\n"
+                f"👤 Users: {role_counts['user']}\n"
+                f"👥 Guests: {role_counts['guest']}\n\n"
+                f"**System Info:**\n"
+                f"• Total Domains: {self.db_service.get_domains_count()}\n"
+                f"• Total Groups: {len(self.db_service.get_groups())}"
+            )
+            
+        except Exception as e:
+            logger.error(f"Error getting user stats: {e}")
+            stats_text = "❌ **Error**\n\nFailed to load user statistics."
+        
+        keyboard = [[InlineKeyboardButton("🔙 Back", callback_data="user_management")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.callback_query.edit_message_text(
+            stats_text,
+            parse_mode='Markdown',
+            reply_markup=reply_markup
+        )
+    
+    async def _show_admin_settings(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show admin settings"""
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        
+        settings_text = (
+            "⚙️ **Admin Settings**\n\n"
+            "**Current Configuration:**\n"
+            f"• Check Interval: 5 minutes\n"
+            f"• Connection Timeout: 10 seconds\n"
+            f"• Max Concurrent Checks: 100\n"
+            f"• Domains per Page: 5\n\n"
+            "**System Status:**\n"
+            f"• Bot Status: Running\n"
+            f"• Database: Connected\n"
+            f"• Health Server: Active\n\n"
+            "**Features:**\n"
+            "• Role-based Access Control: ✅\n"
+            "• User Management: ✅\n"
+            "• Group Organization: ✅\n"
+            "• Bulk Operations: ✅"
+        )
+        
+        keyboard = [[InlineKeyboardButton("🔙 Back", callback_data="user_management")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.callback_query.edit_message_text(
+            settings_text,
+            parse_mode='Markdown',
+            reply_markup=reply_markup
+        )
+    
+    async def _show_change_role_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE, target_user_id: str):
+        """Show role change menu for a user"""
+        user_id = update.effective_user.id
+        
+        # Check if user is admin
+        if not self.user_service.is_admin(user_id):
+            await update.callback_query.answer("❌ Access Denied", show_alert=True)
+            return
+        
+        try:
+            target_user = self.user_service.get_user(int(target_user_id))
+            
+            if not target_user:
+                await update.callback_query.edit_message_text(
+                    f"❌ **User Not Found**\n\nUser ID `{target_user_id}` not found.",
+                    parse_mode='Markdown'
+                )
+                return
+            
+            username = target_user.get('username', 'Unknown')
+            current_role = target_user.get('role', 'unknown').title()
+            
+            from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+            
+            keyboard = [
+                [
+                    InlineKeyboardButton("👑 Admin", callback_data=f"set_role_{target_user_id}_admin"),
+                    InlineKeyboardButton("👤 User", callback_data=f"set_role_{target_user_id}_user")
+                ],
+                [
+                    InlineKeyboardButton("👥 Guest", callback_data=f"set_role_{target_user_id}_guest")
+                ],
+                [
+                    InlineKeyboardButton("🔙 Back", callback_data=f"user_info_{target_user_id}"),
+                    InlineKeyboardButton("❌ Cancel", callback_data="users_page_0")
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.callback_query.edit_message_text(
+                f"🔄 **Change User Role**\n\n"
+                f"**Username:** @{username}\n"
+                f"**User ID:** `{target_user_id}`\n"
+                f"**Current Role:** {current_role}\n\n"
+                f"**Select new role:**\n"
+                f"👑 **Admin** - Full access to all features\n"
+                f"👤 **User** - Read-only access to all domains\n"
+                f"👥 **Guest** - Limited access to assigned groups",
+                parse_mode='Markdown',
+                reply_markup=reply_markup
+            )
+            
+        except Exception as e:
+            logger.error(f"Error in _show_change_role_menu: {e}")
+            await update.callback_query.edit_message_text(
+                "❌ **Error**\n\nFailed to load role change menu.",
+                parse_mode='Markdown'
+            )
+    
+    async def _change_user_role(self, update: Update, context: ContextTypes.DEFAULT_TYPE, target_user_id: str, new_role: str):
+        """Change a user's role"""
+        user_id = update.effective_user.id
+        
+        # Check if user is admin
+        if not self.user_service.is_admin(user_id):
+            await update.callback_query.answer("❌ Access Denied", show_alert=True)
+            return
+        
+        try:
+            from services.user_management import UserRole
+            
+            # Validate role
+            role_map = {
+                'admin': UserRole.ADMIN,
+                'user': UserRole.USER,
+                'guest': UserRole.GUEST
+            }
+            
+            if new_role not in role_map:
+                await update.callback_query.edit_message_text(
+                    "❌ **Invalid Role**\n\nPlease select a valid role.",
+                    parse_mode='Markdown'
+                )
+                return
+            
+            target_user = self.user_service.get_user(int(target_user_id))
+            
+            if not target_user:
+                await update.callback_query.edit_message_text(
+                    f"❌ **User Not Found**\n\nUser ID `{target_user_id}` not found.",
+                    parse_mode='Markdown'
+                )
+                return
+            
+            username = target_user.get('username', 'Unknown')
+            old_role = target_user.get('role', 'unknown').title()
+            new_role_obj = role_map[new_role]
+            
+            # Don't allow changing own role to non-admin
+            if int(target_user_id) == user_id and new_role_obj != UserRole.ADMIN:
+                await update.callback_query.answer(
+                    "❌ Cannot change your own role to non-admin", 
+                    show_alert=True
+                )
+                return
+            
+            # Update role
+            if self.user_service.update_user_role(int(target_user_id), new_role_obj, user_id):
+                role_emoji = {
+                    'admin': '👑',
+                    'user': '👤',
+                    'guest': '👥'
+                }
+                
+                await update.callback_query.edit_message_text(
+                    f"✅ **Role Changed Successfully**\n\n"
+                    f"**Username:** @{username}\n"
+                    f"**User ID:** `{target_user_id}`\n"
+                    f"**Old Role:** {old_role}\n"
+                    f"**New Role:** {role_emoji.get(new_role, '❓')} {new_role.title()}\n\n"
+                    f"The user's permissions have been updated.",
+                    parse_mode='Markdown'
+                )
+                
+                # Auto-redirect to user details after 2 seconds
+                await asyncio.sleep(2)
+                await self.user_handlers.show_user_details(update, context, target_user_id)
+            else:
+                await update.callback_query.edit_message_text(
+                    f"❌ **Failed to Change Role**\n\n"
+                    f"Could not update role for user `{target_user_id}`. Please try again.",
+                    parse_mode='Markdown'
+                )
+                
+        except Exception as e:
+            logger.error(f"Error in _change_user_role: {e}")
+            await update.callback_query.edit_message_text(
+                "❌ **Error**\n\nFailed to change user role. Please try again.",
+                parse_mode='Markdown'
+            )
     
     async def _handle_unauthenticated_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle callback queries from unauthenticated users"""
@@ -283,6 +625,15 @@ class DomainBot:
     
     async def _confirm_delete_domain(self, update: Update, context: ContextTypes.DEFAULT_TYPE, domain: str):
         """Show confirmation dialog for domain deletion"""
+        # Check permission
+        user_id = update.effective_user.id
+        if not self.user_service or not self.user_service.has_permission(user_id, 'remove_domains'):
+            await update.callback_query.answer(
+                "❌ Access Denied\n\nYou don't have permission to remove domains.", 
+                show_alert=True
+            )
+            return
+        
         from telegram import InlineKeyboardButton, InlineKeyboardMarkup
         
         keyboard = [
@@ -303,6 +654,15 @@ class DomainBot:
     
     async def _delete_domain(self, update: Update, context: ContextTypes.DEFAULT_TYPE, domain: str):
         """Delete a domain from monitoring"""
+        # Check permission
+        user_id = update.effective_user.id
+        if not self.user_service or not self.user_service.has_permission(user_id, 'remove_domains'):
+            await update.callback_query.answer(
+                "❌ Access Denied\n\nYou don't have permission to remove domains.", 
+                show_alert=True
+            )
+            return
+        
         if self.db_service.remove_domain(domain):
             await update.callback_query.edit_message_text(
                 f"✅ **Domain Removed**\n\n"
@@ -364,11 +724,18 @@ class DomainBot:
         
         # Create action buttons
         from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        
+        # Check if user can delete domains
+        user_id = update.effective_user.id
+        can_delete = self.user_service and self.user_service.has_permission(user_id, 'remove_domains')
+        
+        # Create first row with check button and conditionally delete button
+        first_row = [InlineKeyboardButton("🔄 Check Now", callback_data=f"check_single_{domain}")]
+        if can_delete:
+            first_row.append(InlineKeyboardButton("🗑️ Delete", callback_data=f"delete_confirm_{domain}"))
+        
         keyboard = [
-            [
-                InlineKeyboardButton("🔄 Check Now", callback_data=f"check_single_{domain}"),
-                InlineKeyboardButton("🗑️ Delete", callback_data=f"delete_confirm_{domain}")
-            ],
+            first_row,
             [InlineKeyboardButton("📋 Back to List", callback_data="list_domains")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -576,7 +943,7 @@ class DomainBot:
             logger.error(f"Error in scheduled domain check: {e}")
     
     async def _send_down_notification(self, domain: str, result: Dict, context: ContextTypes.DEFAULT_TYPE):
-        """Send notification to all admins about domain going down"""
+        """Send notification to all bot users about domain going down"""
         error_msg = result.get('error', 'Unknown error')
         timestamp = result['timestamp'].strftime('%Y-%m-%d %H:%M:%S')
         
@@ -588,17 +955,35 @@ class DomainBot:
             f"**Time:** {timestamp}"
         )
         
-        # Send to all admin chat IDs
-        for admin_id in settings.ADMIN_CHAT_IDS:
+        # Get all bot users (admins + registered users)
+        all_users = []
+        
+        # Add legacy admins from settings
+        all_users.extend(settings.ADMIN_CHAT_IDS)
+        
+        # Add registered users from database
+        if self.user_service:
+            registered_users = self.user_service.get_all_users()
+            for user in registered_users:
+                user_id = user.get('user_id')
+                if user_id and user_id not in all_users:
+                    all_users.append(user_id)
+        
+        # Send notification to all users
+        notifications_sent = 0
+        for user_id in all_users:
             try:
                 await context.bot.send_message(
-                    chat_id=admin_id,
+                    chat_id=user_id,
                     text=notification,
                     parse_mode='Markdown'
                 )
-                logger.info(f"Sent down alert for {domain} to admin {admin_id}")
+                logger.info(f"Sent down alert for {domain} to user {user_id}")
+                notifications_sent += 1
             except Exception as e:
-                logger.error(f"Failed to send notification to admin {admin_id}: {e}")
+                logger.error(f"Failed to send notification to user {user_id}: {e}")
+        
+        logger.info(f"Sent domain down notification to {notifications_sent}/{len(all_users)} users")
     
     async def start(self):
         """Start the bot"""

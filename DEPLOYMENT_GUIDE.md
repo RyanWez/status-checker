@@ -219,6 +219,56 @@ flyctl config save
 flyctl volumes snapshots create
 ```
 
+## 👥 User Management Features
+
+### New Role-Based Access Control
+- **Admin**: Full access to all features
+- **User**: Read-only access to all domains
+- **Guest**: Limited access to assigned groups
+
+### User Management Commands (Admin Only)
+```bash
+# Add users (multiple formats)
+/adduser 123456789 john_doe user
+/adduser @john_doe user  # If user interacted recently
+/adduser 987654321 jane_admin admin
+
+# Find users by username
+/finduser @john_doe
+
+# Remove users
+/removeuser 123456789
+
+# List all users (text format)
+/listusers
+
+# Interactive user management (NEW!)
+/userlists
+
+# View your account info
+/userinfo
+```
+
+### Interactive User Management Features
+- **📱 Interactive Interface**: `/userlists` shows users with clickable buttons
+- **👤 User Details**: Click on any user to see detailed information
+- **🔄 Role Changes**: Change user roles with interactive buttons
+- **🗑️ User Removal**: Remove users with confirmation dialogs
+- **📄 Pagination**: Navigate through large user lists
+- **🔄 Real-time Updates**: Instant feedback on all operations
+
+### Permission System
+- **Admins**: Can add/remove domains, manage users, bulk operations, see delete buttons
+- **Users**: Can view and check all domains, cannot modify, no delete buttons shown
+- **Guests**: Can only view assigned groups, cannot modify anything, no delete buttons shown
+
+### 🔔 Notification System
+- **Domain Down Alerts**: Automatic notifications when domains go from UP to DOWN
+- **All Users Notified**: Sent to all bot users (admins + registered users)
+- **No Spam**: Only notifies on status changes, not repeated DOWN states
+- **Detailed Info**: Includes domain name, error message, and timestamp
+- **Real-time**: Notifications sent immediately when issues are detected
+
 ## 📈 Performance Metrics
 
 ### Expected Performance
@@ -226,6 +276,7 @@ flyctl volumes snapshots create
 - **Response Time**: < 2 seconds for bot commands
 - **Memory Usage**: ~200-400MB
 - **CPU Usage**: Low (< 50% most of the time)
+- **User Management**: Instant role-based access control
 
 ### Monitoring Commands
 ```bash
