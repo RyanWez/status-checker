@@ -889,11 +889,11 @@ class DomainBot:
     
     def _setup_scheduled_jobs(self):
         """Setup scheduled background jobs using Telegram's job queue"""
-        # Add domain checking job (every 5 minutes)
+        # Add domain checking job (every 1 hour)
         job_queue = self.application.job_queue
         job_queue.run_repeating(
             self._scheduled_domain_check,
-            interval=timedelta(minutes=5),
+            interval=timedelta(hours=1),  # <--- ၅ မိနစ်မှ ၁ နာရီသို့ ပြောင်းထားသည်
             first=timedelta(seconds=30),  # Start after 30 seconds
             name='domain_check'
         )
