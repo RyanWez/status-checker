@@ -893,7 +893,7 @@ class DomainBot:
         job_queue = self.application.job_queue
         job_queue.run_repeating(
             self._scheduled_domain_check,
-            interval=timedelta(hours=1),  # <--- ၅ မိနစ်မှ ၁ နာရီသို့ ပြောင်းထားသည်
+            interval=timedelta(minutes=30),  
             first=timedelta(seconds=30),  # Start after 30 seconds
             name='domain_check'
         )
